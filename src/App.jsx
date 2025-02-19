@@ -6,11 +6,17 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { app } from "./firebase";
 import "./App.css";
+import { SocketProvider } from './context/SocketContext';
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:3000');
 
 const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const auth = getAuth(app);
+  const [message, setMessage] = useState('');
+  const [messages, setMessages] = useState([]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -23,6 +29,27 @@ const App = () => {
     });
     return () => unsubscribe();
   }, [auth]);
+
+  useEffect(() => {
+    // Listen for incoming messages
+    socket.on('message', (message) => {
+      setMessages((prevMessages) => [...prevMessages, message]);
+    });
+
+    // Cleanup on component unmount
+    return () => {
+      socket.off('message');
+    };
+  }, []);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (message.trim()) {
+      // Send message to server
+      socket.emit('message', message);
+      setMessage('');
+    }
+  };
 
   if (loading) {
     return (
@@ -58,24 +85,40 @@ const App = () => {
   }
   
   return (
-    <div>
-      <BrowserRouter>
-        <Routes>
-          <Route
-            path="/"
-            element={user ? <Home /> : <Navigate to="/login" />} // Redirect to /login if not logged in
+    <SocketProvider>
+      <div>
+        <BrowserRouter>
+          <Routes>
+            <Route
+              path="/"
+              element={user ? <Home /> : <Navigate to="/login" />} // Redirect to /login if not logged in
+            />
+            <Route
+              path="/login"
+              element={user ? <Navigate to="/" /> : <Login />} // Redirect to / if already logged in
+            />
+            <Route
+              path="/signup"
+              element={user ? <Navigate to="/" /> : <Signup />} // Redirect to / if already logged in
+            />
+          </Routes>
+        </BrowserRouter>
+        <div style={{ height: '300px', overflowY: 'auto' }}>
+          {messages.map((msg, index) => (
+            <div key={index}>{msg}</div>
+          ))}
+        </div>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Type a message..."
           />
-          <Route
-            path="/login"
-            element={user ? <Navigate to="/" /> : <Login />} // Redirect to / if already logged in
-          />
-          <Route
-            path="/signup"
-            element={user ? <Navigate to="/" /> : <Signup />} // Redirect to / if already logged in
-          />
-        </Routes>
-      </BrowserRouter>
-    </div>
+          <button type="submit">Send</button>
+        </form>
+      </div>
+    </SocketProvider>
   );
 };
 export default App;
